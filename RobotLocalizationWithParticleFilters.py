@@ -14,6 +14,8 @@ import networkx as nx
 import random
 import statistics
 from ReportLab import *
+import glob
+import argparse
 
 
 ''' ---------------------------RobotLocalizationWithParticleFilters Help-------------------------------
@@ -21,14 +23,41 @@ from ReportLab import *
 
 
 '''
+#------------------------------------------------------------------------------------
+# script arguments
+# Define a custom validation function
+def check_index(value):
+    ivalue = int(value)
+    if ivalue < 0 or ivalue>=10:
+        raise argparse.ArgumentTypeError(f"{value} Index is incorrect")
+    return ivalue
+
+# Create an ArgumentParser object
+parser = argparse.ArgumentParser(description='Robot Localization with Particle Filters')
+
+# Add named arguments
+# parser.add_argument('-folder', help='Specify the path folder.')
+parser.add_argument('-particles', required=True, help='Number of particles')
+parser.add_argument('-index', required=True, type=check_index, help='0: ramp2roundabout, 1: roundabout2ramp, 2: parking2roundabout, '
+                    '3: roundabout2parking, 4: highwayUp, 5: highwayDown, 6: bumpy, 7: manualIntersections, '
+                    '8: ramp2rampX3, 9: highway2roundabout')
+parser.add_argument('-discarded', action='store_true', help='Use discarded model')
+parser.add_argument('-visualize_loc', action='store_true', help='Visualize localization nodes')
+parser.add_argument('-delete_old', action='store_true', help='Delete old files')
+args = parser.parse_args()
+
+# Access the values of the arguments
 
 
 # ----------------------------------Global variables---------------------------------
 ALMOST_ZERO = 1e-5
-PARTICLES_NUM = 6000
+PARTICLES_NUM = args.particles
 GROWTH_SCALE = 0.005
 LANE_LENGTH = 0.35
 RESAMPLE_RATIO = 0.75
+INDEX = 8
+vel_std = 0.04
+steer_std = 0.2
 
 IMAGE_PATH = "C:\\Users\\xrist\\Documents\PostGraduate\\Thesis\\Competition_map.png"
 IMAGE = cv2.imread(IMAGE_PATH)
@@ -70,7 +99,28 @@ highwayUp_nodes = ("49", "308", "309", "310", "311", "312", "313", "314", "315",
 highwayDown_nodes = ("343", "344", "345", "346", "347", "348", "349", "350", "351", "352", "353", "354", "355", "356", "357", "358", "359",
                      "360", "361", "362", "363", "364", "365", "366", "367", "368", "369", "370", "371", "372", "373", "374")
 #----------------------------------------------------------------------------------------------------
-INDEX = 6
+manualIntersections_nodes = ("78", "87", "45", "46", "40", "90", "54", "55", "51", "104", "105", "106", "36", "37", "31", "114", "115",
+                    "116", "117", "118", "27", "28", "22", "288", "289", "290", "291", "292", "293", "294", "295", "296", "297",
+                    "298", "299", "300", "301", "302", "303", "304", "343", "344", "345", "346", "347", "348", "349", "350",
+                    "351", "352", "353", "354", "355", "356", "357", "358", "359", "360", "361", "362", "363", "364", "365",
+                    "366", "367", "368", "369", "370", "371", "372", "373", "374", "51", "104", "105", "106", "36", "37", "33",
+                    "113", "6", "9", "8", "139", "140", "141", "142", "143", "15", "19", "13", "145", "61", "65", "62", "148","149",
+                    "150", "151", "152", "153", "154", "155", "156", "157", "158", "159", "160", "161", "162", "163", "164", "165",
+                    "166", "167", "168", "169", "170", "171", "198", "199", "200", "201", "202", "203", "204", "205", "206","207","208",
+                    "209", "210"
+      )
+#----------------------------------------------------------------------------------------------------
+ramp2ramp_nodes = ("149","150", "151", "152", "153", "154", "155", "156", "157", "158", "159", "160", "161", "162", "163", "164", "165", "166", "167",
+         "168", "169", "170", "171", "198", "199", "200", "201", "202", "203", "204", "205", "206","207","208", "209", "210", "211", "212", "213", "214",
+         "215", "216", "217", "218", "219", "220", "221", "222", "223", "224", "225", "226", "227", "228", "229", "230", "267", "268", "269", "270", "271",
+        "272", "273", "274", "275", "276", "277", "278", "279", "280", "281", "282", "283", "284", "285", "286", "287", "23", "24", "147", "18", "19", "13",
+        "145", "61")
+#----------------------------------------------------------------------------------------------------
+highway2roundabout_nodes = ("304", "343", "344", "345", "346", "347", "348", "349", "350", "351", "352", "353", "354", "355", "356", "357", "358", "359",
+                     "360", "361", "362", "363", "364", "365", "366", "367", "368", "369", "370", "371", "372", "373", "374", "51", "104", "105",
+                            "106", "36", "31", "114", "115", "116", "117", "118", "27", "22", "288", "289", "290", "291", "292", "293", "294",
+                            "295", "296", "297", "298", "299", "300", "301", "302", "303")
+#----------------------------------------------------------------------------------------------------
 
 files = [
 "C:\\Users\\xrist\\Documents\PostGraduate\\Thesis\\Data_23_09\\ros_ramp2roundaboutTest\\",
@@ -79,7 +129,10 @@ files = [
 "C:\\Users\\xrist\\Documents\PostGraduate\\Thesis\\Data_23_09\\ros_roundabout2parkingTest\\",
 "C:\\Users\\xrist\\Documents\PostGraduate\\Thesis\\Data_23_09\\ros_highwayUpTest\\",
 "C:\\Users\\xrist\\Documents\PostGraduate\\Thesis\\Data_23_09\\ros_highwayDownTest\\",
-"C:\\Users\\xrist\\Documents\PostGraduate\\Thesis\\Data_23_09\\ros_bumpyTest\\"
+"C:\\Users\\xrist\\Documents\PostGraduate\\Thesis\\Data_23_09\\ros_bumpyTest\\",
+"C:\\Users\\xrist\\Documents\PostGraduate\\Thesis\\Data_18_11\\ros_manual_intersectionsTest\\",
+"C:\\Users\\xrist\\Documents\PostGraduate\\Thesis\\Data_18_11\\ros_full_ramp2ramp_x3Test\\",
+"C:\\Users\\xrist\\Documents\PostGraduate\\Thesis\\Data_18_11\\ros_full_highway_to_roundabout_almost_cyrcleTest\\"
 ]
 
 nodes = [
@@ -89,11 +142,14 @@ nodes = [
   roundabout2parking_nodes,
   highwayUp_nodes,
   highwayDown_nodes,
-  bumpy_nodes
+  bumpy_nodes,
+  manualIntersections_nodes,
+  ramp2ramp_nodes,
+  highway2roundabout_nodes
 ]
 #----------------------------------------------------------------------------------------------------
 class Report:
-  def __init__(self, num_particles: int, growth_scale : float, resample_ratio : float, path, discarded: bool):
+  def __init__(self, num_particles: int, growth_scale : float, resample_ratio : float, path, discarded: bool, vel_std: float, steer_std: float):
     self.num_particles = num_particles
     self.growth_scale = growth_scale
     self.resample_ratio = resample_ratio
@@ -107,14 +163,12 @@ class Report:
     self.est_robot_posxs = []
     self.est_robot_posys = []
     self.discarded = discarded
+    self.vel_std = vel_std
+    self.steer_std = steer_std
 
   def add_nums(self, resample_num, sample_num):
     self.resample_num = resample_num
     self.sample_num = sample_num
-
-  def add_stds(self, vel_std, steer_std):
-    self.vel_std = vel_std
-    self.steer_std = steer_std
 
 #----------------------------------------------------------------------------------------------------
 class Node:
@@ -150,7 +204,7 @@ class Particle:
   def print(self):
     print(self.x, self.y, self.angle, self.weight)
 
-  def visualize(self, is_best):
+  def visualize(self, is_best=False):
     px = int(self.x * self.factor_x)
     py = int(self.y * self.factor_y)
 
@@ -177,8 +231,8 @@ class Particle:
       self.weight = 1 - self.dist/(self.lane_length/2)
 
   def find_closest_two_nodes(self):
-    closest_node = nodes[INDEX][0]
-    for node in nodes[INDEX]:
+    closest_node = nodes[args.index][0]
+    for node in nodes[args.index]:
       x1 = G.nodes[node]["x"]
       y1 = G.nodes[node]["y"]
       dist = self.calc_dist(Node(x1, y1))
@@ -209,8 +263,6 @@ def initialize_particles_gaussian(init_x, init_y, init_angle, growth_scale, num_
   y_list = list(np.random.normal(loc=init_y, scale=growth_scale, size=num_particles - 1))
   angle_list = list(np.random.normal(loc=init_angle, scale=0.01, size=num_particles - 1))
   initial_weight = 1.0 / float(num_particles)
-
-  #plot_all_data(x_list, y_list, angle_list, init_x, init_y, init_angle, scale)
 
   particles = list()
   for x, y, angle in zip(x_list, y_list, angle_list):
@@ -382,16 +434,25 @@ def normalize(particles):
 
 # ----------------------------------------------------------------------------------------------------
 
-def visualize(particles, best_particle=None):
+def visualize(particles):
   for particle in particles:
-    if particle == best_particle:
-      particle.visualize(True)
-    else:
-      particle.visualize(False)
+      particle.visualize()
 
   cv2.namedWindow("Robot Localization with Particle Filters", cv2.WINDOW_NORMAL)
   cv2.imshow("Robot Localization with Particle Filters", IMAGE)
-  cv2.waitKey(1)
+
+  if args.visualize_loc:
+    while True:
+    # Wait for a key event
+      key = cv2.waitKey(1) & 0xFF
+
+    # Check if the 'q' key is pressed to exit the loop and close the window
+      if key == ord('q'):
+        break
+  else:
+    cv2.waitKey(1)
+
+  # cv2.destroyAllWindows()
 
 # ----------------------------------------------------------------------------------------------------
 
@@ -417,12 +478,8 @@ def create_gaussian_angle(angle, std):
 # -----------------------------------------------------------------------------------------------------
 
 def predict(particles, velocity, steer_angle, time_diff):
-
   #new_velocity = velocity + std[0]*np.random.randn(len(particles))
   #new_steer_angle = steer_angle + std[1]*np.random.randn(len(particles))
-  vel_std = 0.04
-  steer_std = 0.2
-  report.add_stds(vel_std, steer_std)
   new_velocity = create_gaussian_velocity(velocity, vel_std)
   new_steer_angle = create_gaussian_angle(steer_angle, steer_std)
 
@@ -495,29 +552,48 @@ def apply_algorithm(particles, command_file, loc_dict_c, loc_dict, report):
 
 #----------------------------------------------------------------------------------------------------
 
+def delete_previous(main_folder):
+  if args.delete_old:
+    txt_extension = '*.txt'
+    txt_files = glob.glob(f'{main_folder}/{txt_extension}')
+
+    for txt_file in txt_files:
+      try:
+        os.remove(txt_file)
+        print(f"Deleted: {txt_file}")
+      except Exception as e:
+        print(f"Error deleting {txt_file}: {e}")
+
+#----------------------------------------------------------------------------------------------------
+
+def read_new(main_folder):
+  extension = '*.log'
+  files = glob.glob(f'{main_folder}/{extension}')
+  for filepath in files:
+    command_file, loc_file = ReadLogFile.read_file(filepath)
+
+  return command_file, loc_file
+
+#----------------------------------------------------------------------------------------------------
+
 if __name__ == '__main__':
-  random.seed(2) # question comment this maybe?
-  main_filepath = files[INDEX]
-  filepath =  main_filepath+"data.log"
-  discarded = True
-
-  #Here the data are read and two files are created, one for command measurements and another for localization measurements
-  command_file, loc_file = ReadLogFile.read_file(filepath)
-
-  #discarded model with a lot less measurements
-  if discarded:
-    command_file = main_filepath+"discarded_command_measurements.txt"
-  report = Report(PARTICLES_NUM, GROWTH_SCALE, RESAMPLE_RATIO, command_file, discarded)
-
+  random.seed(1) # question comment this maybe?
+  main_folder = files[args.index]
+  delete_previous(main_folder)
+  command_file, loc_file = read_new(main_folder)
   loc_dict, loc_dict_c = collect_localization_data(loc_file)
-  #particles = [Particle(val[0], val[1], val[2], 1) for val in loc_dict.values()]
-  #visualize(particles)
 
-  #-------Begin of particle filter algorithm-------
-  init_x, init_y, init_angle = loc_dict[0.0]
-  particles = initialize_particles_gaussian(init_x, init_y, init_angle, GROWTH_SCALE)
-  visualize(particles)
-  apply_algorithm(particles, command_file, loc_dict_c, loc_dict, report)
-  # -------End of particle filter algorithm--------
+  if args.visualize_loc:
+    particles = [Particle(val[0], val[1], val[2], 1) for val in loc_dict.values()]
+    visualize(particles)
+  else:
+    init_x, init_y, init_angle = loc_dict[0.0]
+    particles = initialize_particles_gaussian(init_x, init_y, init_angle, GROWTH_SCALE)
+    visualize(particles)
 
-  create_report(report)
+    if args.discarded:
+      command_file = main_folder + "discarded_command_measurements.txt"
+
+    report = Report(PARTICLES_NUM, GROWTH_SCALE, RESAMPLE_RATIO, command_file, args.discarded, vel_std, steer_std)
+    apply_algorithm(particles, command_file, loc_dict_c, loc_dict, report)
+    create_report(report)
